@@ -115,7 +115,16 @@ Future documentation may include:
 
 ## Contributing
 
-This is currently a local research port. A formal contribution workflow can be added later if the project is moved to GitHub.
+This project is in an early research-porting stage. Contributions should focus on small, testable changes that reproduce behavior from the original R implementation.
+
+Recommended workflow:
+
+1. Open an issue or discussion describing the function or behavior to port.
+2. Create a branch for the change.
+3. Add or update tests using examples from the R implementation.
+4. Open a pull request with a short explanation of what was ported and how it was tested.
+
+A formal `CONTRIBUTING.md` file can be added once the project has more contributors.
 
 ## License
 
