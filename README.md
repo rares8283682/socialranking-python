@@ -68,8 +68,6 @@ Python Library EAI/
     test_package_import.py
 ```
 
-The original R files are kept as local reference material during the port. They are not committed to the public repository until redistribution and licensing are checked.
-
 ## Requirements
 
 - Python 3.10 or newer
