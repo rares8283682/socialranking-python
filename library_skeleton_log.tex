@@ -1,0 +1,233 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{pdflscape}
+\usepackage[table]{xcolor}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+
+\definecolor{mainblue}{RGB}{38, 84, 124}
+\definecolor{softblue}{RGB}{230, 241, 250}
+\definecolor{softgreen}{RGB}{231, 247, 238}
+\definecolor{softorange}{RGB}{255, 242, 224}
+\definecolor{softgray}{RGB}{243, 244, 246}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\pathitem}[1]{\texttt{#1}}
+\renewcommand{\arraystretch}{1.45}
+
+\title{Python Library Skeleton Log}
+\author{Rares Calin Olteanu}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Goal}
+
+The first step of the project was to create the skeleton of a Python library.
+The goal is to port functions from the original R package into a Python package
+that can be installed, imported, tested, and reused by other Python users.
+
+\section{Current Project Structure}
+
+The current project skeleton is shown on the next page. The diagram separates
+the package configuration, the Python source code, the tests, and the original
+R reference files.
+
+\begin{landscape}
+\thispagestyle{empty}
+\vspace*{-0.35cm}
+\begin{center}
+{\Huge\bfseries Current Python Library Skeleton}
+
+\vspace{0.25cm}
+{\large The project is split into configuration, importable source code, tests, and original R reference files.}
+\end{center}
+
+\vspace{0.35cm}
+
+\begin{tcolorbox}[
+  enhanced,
+  colback=black!87,
+  colframe=black!87,
+  arc=5mm,
+  boxrule=0pt,
+  left=9mm,
+  right=9mm,
+  top=5mm,
+  bottom=5mm,
+  width=0.94\linewidth,
+  center
+]
+\color{white}
+\renewcommand{\arraystretch}{1.08}
+\begin{tabularx}{\linewidth}{@{}>{\ttfamily\fontsize{11}{12.3}\selectfont}p{9.7cm} >{\sffamily\fontsize{11}{12.3}\selectfont\raggedright\arraybackslash}X@{}}
+Python Library EAI/ & <- main project folder \\
+|-- pyproject.toml & <- package settings: name, version, build system, tests \\
+|-- README.md & <- explanation file: goal, setup, test commands \\
+|-- src/ & <- source-code folder; keeps library code isolated \\
+|   |-- socialranking/ & <- actual Python package users will import \\
+|       |-- \_\_init\_\_.py & <- public imports, for example PowerRelation \\
+|       |-- power\_relation.py & <- core object: coalitions, classes, lookups \\
+|       |-- social\_ranking.py & <- output object: rankings between elements \\
+|       |-- helpers.py & <- shared utilities, currently create\_powerset \\
+|       |-- rankings.py & <- algorithms: lexcel, cumulative, Banzhaf, etc. \\
+|-- tests/ & <- automated checks for the Python port \\
+|   |-- test\_helpers.py & <- verifies helper behavior against R logic \\
+|   |-- test\_package\_import.py & <- verifies the package imports correctly \\
+|-- R- Library functions/ & <- original R code; source of truth for the port \\
+    |-- PowerRelation.R & <- first major file to port; dependency core \\
+    |-- SocialRanking.R & <- converts scores into final rankings \\
+    |-- createPowerset.R & <- reference for Python create\_powerset \\
+    |-- lexcel.R & <- first ranking method after the core objects \\
+    |-- ... & <- remaining ranking, comparison, generator, helpers \\
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{0.25cm}
+
+\begin{center}
+\colorbox{softblue}{%
+\begin{minipage}{0.86\linewidth}
+\large
+\textbf{Big picture.} The R files define the behavior. The files in
+\pathitem{src/socialranking/} are the new Python library. The tests check that
+the Python behavior matches the R examples. The \pathitem{pyproject.toml} file
+makes the result installable and reusable.
+\end{minipage}}
+\end{center}
+\end{landscape}
+
+\section{Meaning of the Main Files}
+
+\subsection{\texttt{pyproject.toml}}
+
+This file defines the Python package. It tells Python the package name,
+the package version, where the source code is located, and how tests should be
+configured.
+
+\subsubsection*{Line-by-line explanation}
+
+\begin{description}
+  \item[\texttt{[build-system]}]
+  Starts the build-system section. This section tells Python which tools are
+  needed to build or install the package.
+
+  \item[\texttt{requires = ["setuptools>=69", "wheel"]}]
+  Lists the build tools required before the package can be built.
+  \texttt{setuptools} is the packaging tool that reads the project metadata and
+  finds the package code. The expression \texttt{>=69} means version 69 or
+  newer. \texttt{wheel} is the tool used to build installable \texttt{.whl}
+  package files.
+
+  \item[\texttt{build-backend = "setuptools.build\_meta"}]
+  Tells Python to use \texttt{setuptools} as the backend that performs the
+  actual build. In practice, when \texttt{pip} installs the project, it asks
+  this backend how the package should be built.
+
+  \item[\texttt{[project]}]
+  Starts the main project metadata section. The lines below describe the
+  library itself.
+
+  \item[\texttt{name = "socialranking"}]
+  Sets the package name. This is the name users will import in Python, for
+  example \texttt{import socialranking}.
+
+  \item[\texttt{version = "0.1.0"}]
+  Sets the current package version. The value \texttt{0.1.0} means this is an
+  early development version, not yet a stable final release.
+
+  \item[\texttt{description = "..."}]
+  Gives a short description of the package. The current description says that
+  the package provides Python tools for power relations, coalitional rankings,
+  and social ranking solutions.
+
+  \item[\texttt{readme = "README.md"}]
+  Tells package tools that \texttt{README.md} is the longer explanation of the
+  project.
+
+  \item[\texttt{requires-python = ">=3.10"}]
+  States that the package requires Python 3.10 or newer. This allows the code
+  to use modern Python syntax and type hints.
+
+  \item[\texttt{authors = [...]}]
+  Records the package author. At the moment, this contains the name
+  \texttt{Rares Calin Olteanu}.
+
+  \item[\texttt{dependencies = []}]
+  Lists packages required for normal users to run the library. It is empty for
+  now because the skeleton does not yet need external runtime packages such as
+  \texttt{numpy}.
+
+  \item[\texttt{[project.optional-dependencies]}]
+  Starts a section for optional dependency groups. These are useful for
+  development or documentation, but are not required for normal package use.
+
+  \item[\texttt{dev = ["pytest>=8"]}]
+  Defines a development dependency group named \texttt{dev}. It installs
+  \texttt{pytest}, the testing tool. Developers install it with the editable
+  development install command shown in the \texttt{README.md}.
+
+  \item[\texttt{[tool.setuptools...]}]
+  Starts the \texttt{setuptools} package-discovery configuration. In the file,
+  the full section name is \texttt{[tool.setuptools.packages.find]}.
+
+  \item[\texttt{where = ["src"]}]
+  Tells \texttt{setuptools} to look inside the \texttt{src/} folder to find the
+  Python package. This is needed because the actual package is located at
+  \texttt{src/socialranking/}.
+
+  \item[\texttt{[tool.pytest.ini\_options]}]
+  Starts the \texttt{pytest} configuration section.
+
+  \item[\texttt{testpaths = ["tests"]}]
+  Tells \texttt{pytest} to look for tests inside the \texttt{tests/} folder.
+
+  \item[\texttt{pythonpath = ["src"]}]
+  Tells \texttt{pytest} to add \texttt{src/} to the Python import path while
+  running tests. This allows test files to import \texttt{socialranking} before
+  the package is formally installed.
+\end{description}
+
+\noindent In summary, \texttt{pyproject.toml} does not contain algorithm code.
+Its role is to make the project behave like a real installable and testable
+Python library.
+
+\subsection{\texttt{README.md}}
+
+This file explains the project. It includes basic development instructions,
+such as how to create a virtual environment, install the package locally, and
+run tests.
+
+\subsection{\texttt{src/socialranking/}}
+
+This folder contains the actual Python library. Users will eventually import
+the library with commands such as:
+
+\begin{verbatim}
+from socialranking import PowerRelation
+\end{verbatim}
+
+\subsection{\texttt{tests/}}
+
+This folder contains tests. Tests are used to verify that each function behaves
+like the original R implementation.
+
+\subsection{\texttt{R- Library functions/}}
+
+This folder contains the original R files. These files are the reference
+implementation that will be ported to Python step by step.
+
+\section{Next Step}
+
+The next implementation step is to properly port the \texttt{PowerRelation}
+object, because most of the remaining functions depend on it.
+
+\end{document}

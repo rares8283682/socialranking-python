@@ -1,0 +1,25 @@
+# Python caches and build outputs
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Test and tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS and local history
+.DS_Store
+.Rhistory
+
+# Generated documents and local research PDFs
+*.pdf
+
+# Local reference material not committed until redistribution/licensing is checked
+R- Library functions /

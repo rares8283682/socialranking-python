@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "socialranking"
+version = "0.1.0"
+description = "Python tools for power relations, coalitional rankings, and social ranking solutions."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Rares Calin Olteanu", email = "rares-calin.olteanu@psl.eu" }
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
