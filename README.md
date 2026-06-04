@@ -128,8 +128,7 @@ A formal `CONTRIBUTING.md` file can be added once the project has more contribut
 
 ## License
 
-No license has been selected yet. A license should be chosen before publishing the package publicly.
-
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 This project is based on an existing R implementation of social ranking and power relation functions, together with research material provided by collaborators.
