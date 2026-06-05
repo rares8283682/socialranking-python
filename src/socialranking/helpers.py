@@ -1,6 +1,6 @@
 """Small reusable helper functions across the library."""
-from __future__ import annotations
 
+from __future__ import annotations
 from itertools import combinations
 from typing import Hashable, Iterable
 
@@ -35,7 +35,7 @@ def create_powerset(elements: Iterable[Element], include_empty_set: bool = True)
     except TypeError as error:
         raise TypeError("elements must be hashable") from error
 
-    if len(items) != len(set(items)):
+    if len(items) != len(unique_items):
         raise ValueError("elements must not contain duplicates")
     coalitions: list[Coalition] = []
 
