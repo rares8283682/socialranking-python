@@ -116,14 +116,14 @@ def test_from_nested_rejects_empty_equivalence_class():
 
 
 def test_from_nested_rejects_duplicate_coalition_same_class():
-    with pytest.raises(ValueError, match="coalition must not appear more than once"):
+    with pytest.raises(ValueError, match="duplicate coalition found"):
         PowerRelation.from_nested([
             [[1], [1]],
         ])
 
 
 def test_from_nested_rejects_duplicate_coalition_different_classes():
-    with pytest.raises(ValueError, match="coalition must not appear more than once"):
+    with pytest.raises(ValueError, match="duplicate coalition found"):
         PowerRelation.from_nested([
             [[1]],
             [[1]],
@@ -131,7 +131,7 @@ def test_from_nested_rejects_duplicate_coalition_different_classes():
 
 
 def test_from_nested_rejects_duplicate_coalition_even_if_order_differs():
-    with pytest.raises(ValueError, match="coalition must not appear more than once"):
+    with pytest.raises(ValueError, match="duplicate coalition found"):
         PowerRelation.from_nested([
             [[1, 2]],
             [[2, 1]],
@@ -168,7 +168,7 @@ def test_from_string_simple_strict_relation():
 
 
 def test_from_string_with_indifference():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert str(relation) == "12 > (1 ~ 2) > {}"
     assert relation.equivalence_classes == (
@@ -185,13 +185,13 @@ def test_from_string_with_parentheses():
 
 
 def test_from_string_with_no_spaces():
-    relation = PowerRelation.from_string("12>1~2>{}")
+    relation = PowerRelation.from_string("12>(1~2)>{}")
 
     assert str(relation) == "12 > (1 ~ 2) > {}"
 
 
 def test_from_string_with_many_spaces():
-    relation = PowerRelation.from_string("  12   >   1   ~   2   >   {}  ")
+    relation = PowerRelation.from_string("  12   >   (  1   ~   2  )   >   {}  ")
 
     assert str(relation) == "12 > (1 ~ 2) > {}"
 
@@ -235,67 +235,67 @@ def test_from_string_sorts_digits_inside_coalition():
 
 
 def test_from_string_rejects_non_string_input():
-    with pytest.raises(TypeError, match="power relation value must be a string"):
+    with pytest.raises(TypeError, match="value must be a string"):
         PowerRelation.from_string(123)  # type: ignore[arg-type]
 
 
 def test_from_string_rejects_empty_string():
-    with pytest.raises(ValueError, match="must contain at least one coalition"):
+    with pytest.raises(ValueError, match="must not be empty"):
         PowerRelation.from_string("")
 
 
 def test_from_string_rejects_spaces_only():
-    with pytest.raises(ValueError, match="must contain at least one coalition"):
+    with pytest.raises(ValueError, match="must not be empty"):
         PowerRelation.from_string("     ")
 
 
 def test_from_string_rejects_starting_with_greater_than():
-    with pytest.raises(ValueError, match="malformed power relation string"):
+    with pytest.raises(ValueError, match="expected coalition|missing equivalence class|missing coalition|expected .*>.* between equivalence classes"):
         PowerRelation.from_string("> 12")
 
 
 def test_from_string_rejects_ending_with_greater_than():
-    with pytest.raises(ValueError, match="malformed power relation string"):
+    with pytest.raises(ValueError, match="expected coalition|missing equivalence class|missing coalition|expected .*>.* between equivalence classes"):
         PowerRelation.from_string("12 >")
 
 
 def test_from_string_rejects_starting_with_tilde():
-    with pytest.raises(ValueError, match="malformed power relation string"):
+    with pytest.raises(ValueError, match="expected coalition|missing equivalence class|missing coalition|expected .*>.* between equivalence classes"):
         PowerRelation.from_string("~ 12")
 
 
 def test_from_string_rejects_ending_with_tilde():
-    with pytest.raises(ValueError, match="malformed power relation string"):
+    with pytest.raises(ValueError, match="expected coalition|missing equivalence class|missing coalition|expected .*>.* between equivalence classes"):
         PowerRelation.from_string("12 ~")
 
 
 def test_from_string_rejects_double_greater_than():
-    with pytest.raises(ValueError, match="malformed power relation string"):
+    with pytest.raises(ValueError, match="expected coalition|missing equivalence class|missing coalition|expected .*>.* between equivalence classes"):
         PowerRelation.from_string("12 >> 1")
 
 
 def test_from_string_rejects_double_tilde():
-    with pytest.raises(ValueError, match="malformed power relation string"):
+    with pytest.raises(ValueError, match="expected coalition|missing equivalence class|missing coalition|expected .*>.* between equivalence classes"):
         PowerRelation.from_string("1 ~~ 2")
 
 
 def test_from_string_rejects_greater_than_then_tilde():
-    with pytest.raises(ValueError, match="malformed power relation string"):
+    with pytest.raises(ValueError, match="expected coalition|missing equivalence class|missing coalition|expected .*>.* between equivalence classes"):
         PowerRelation.from_string("12 > ~ 1")
 
 
 def test_from_string_rejects_tilde_then_greater_than():
-    with pytest.raises(ValueError, match="malformed power relation string"):
+    with pytest.raises(ValueError, match="expected coalition|missing equivalence class|missing coalition|expected .*>.* between equivalence classes"):
         PowerRelation.from_string("12 ~ > 1")
 
 
 def test_from_string_rejects_invalid_character():
-    with pytest.raises(ValueError, match="invalid character"):
+    with pytest.raises(ValueError, match="unsupported character"):
         PowerRelation.from_string("12 @ 1")
 
 
 def test_from_string_rejects_comma_character():
-    with pytest.raises(ValueError, match="invalid character"):
+    with pytest.raises(ValueError, match="unsupported character"):
         PowerRelation.from_string("1,2 > 1")
 
 
@@ -305,23 +305,60 @@ def test_from_string_rejects_duplicate_element_inside_coalition():
 
 
 def test_from_string_rejects_duplicate_coalition():
-    with pytest.raises(ValueError, match="coalition must not appear more than once"):
+    with pytest.raises(ValueError, match="duplicate coalition found"):
         PowerRelation.from_string("1 > 1")
 
 
 def test_from_string_rejects_duplicate_coalition_inside_tie():
-    with pytest.raises(ValueError, match="coalition must not appear more than once"):
-        PowerRelation.from_string("1 ~ 1")
+    with pytest.raises(ValueError, match="duplicate coalition found"):
+        PowerRelation.from_string("(1 ~ 1)")
 
 
 def test_from_string_rejects_duplicate_empty_coalition():
-    with pytest.raises(ValueError, match="coalition must not appear more than once"):
+    with pytest.raises(ValueError, match="duplicate coalition found"):
         PowerRelation.from_string("{} > {}")
 
 
 def test_from_string_rejects_missing_separator_between_coalitions():
-    with pytest.raises(ValueError, match="missing separator between coalitions"):
-        PowerRelation.from_string("1 2")
+    with pytest.raises(ValueError, match="expected '>' between equivalence classes"):
+        PowerRelation.from_string("1{}")
+
+
+def test_from_string_whitespace_inside_coalition_is_ignored():
+    relation = PowerRelation.from_string("1 2")
+
+    assert relation.equivalence_classes == (((1, 2),),)
+
+
+def test_from_string_rejects_empty_parentheses():
+    with pytest.raises(ValueError, match="empty or malformed equivalence class"):
+        PowerRelation.from_string("()")
+
+
+def test_from_string_rejects_missing_coalition_after_tilde_in_parentheses():
+    with pytest.raises(ValueError, match="missing coalition after '~'"):
+        PowerRelation.from_string("(1 ~)")
+
+
+def test_from_string_rejects_missing_closing_parenthesis():
+    with pytest.raises(ValueError, match="missing closing parenthesis"):
+        PowerRelation.from_string("(1 ~ 2")
+
+
+def test_from_string_rejects_greater_than_inside_parentheses():
+    with pytest.raises(ValueError, match="inside equivalence class"):
+        PowerRelation.from_string("(1 > 2)")
+
+
+def test_from_string_rejects_non_empty_braced_coalition():
+    with pytest.raises(ValueError, match="unsupported character"):
+        PowerRelation.from_string("{1}")
+
+
+def test_from_string_accepts_parenthesized_single_coalition():
+    relation = PowerRelation.from_string("(12)")
+
+    assert relation.equivalence_classes == (((1, 2),),)
 
 
 # ============================================================
@@ -376,13 +413,13 @@ def test_elements_stable_for_mixed_types():
 # ============================================================
 
 def test_coalitions_returns_all_coalitions_in_order():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.coalitions == ((1, 2), (1,), (2,), ())
 
 
 def test_coalitions_with_single_class():
-    relation = PowerRelation.from_string("1 ~ 2 ~ 3")
+    relation = PowerRelation.from_string("(1 ~ 2 ~ 3)")
 
     assert relation.coalitions == ((1,), (2,), (3,))
 
@@ -434,6 +471,36 @@ def test_coalition_lookup_order_independent():
     assert relation.coalition_lookup([2, 1]) == 0
 
 
+def test_coalition_lookup_compact_string_pair():
+    relation = PowerRelation.from_string("12 > 1 > 2")
+
+    assert relation.coalition_lookup("12") == 0
+
+
+def test_coalition_lookup_compact_string_strips_whitespace():
+    relation = PowerRelation.from_string("12 > 1 > 2")
+
+    assert relation.coalition_lookup(" 1 2 ") == 0
+
+
+def test_coalition_lookup_compact_empty_coalition_string():
+    relation = PowerRelation.from_string("12 > 1 > {}")
+
+    assert relation.coalition_lookup("{}") == 2
+
+
+def test_coalition_lookup_compact_string_missing_element_returns_none():
+    relation = PowerRelation.from_string("12 > 1 > 2")
+
+    assert relation.coalition_lookup("13") is None
+
+
+def test_coalition_lookup_non_alphanumeric_string_returns_none():
+    relation = PowerRelation.from_string("12 > 1 > 2")
+
+    assert relation.coalition_lookup("1-2") is None
+
+
 def test_coalition_lookup_missing_returns_none():
     relation = PowerRelation.from_string("12 > 1 > {}")
 
@@ -459,25 +526,25 @@ def test_coalition_lookup_rejects_unhashable_element():
 # ============================================================
 
 def test_coalition_position_first_class():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.coalition_position([1, 2]) == (0, 0)
 
 
 def test_coalition_position_second_class_first_coalition():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.coalition_position([1]) == (1, 0)
 
 
 def test_coalition_position_second_class_second_coalition():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.coalition_position([2]) == (1, 1)
 
 
 def test_coalition_position_empty_coalition():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.coalition_position([]) == (2, 0)
 
@@ -492,6 +559,26 @@ def test_coalition_position_order_independent():
     relation = PowerRelation.from_string("12 > 1 > 2")
 
     assert relation.coalition_position([2, 1]) == (0, 0)
+
+
+def test_coalition_position_compact_string_pair():
+    relation = PowerRelation.from_string("12 > 1 > 2")
+
+    assert relation.coalition_position("12") == (0, 0)
+
+
+def test_coalition_position_rejects_duplicate_elements():
+    relation = PowerRelation.from_string("12 > 1 > 2")
+
+    with pytest.raises(ValueError, match="coalition must not contain duplicate elements"):
+        relation.coalition_position([1, 1])
+
+
+def test_coalition_position_rejects_unhashable_element():
+    relation = PowerRelation.from_string("12 > 1 > 2")
+
+    with pytest.raises(TypeError, match="coalition elements must be hashable"):
+        relation.coalition_position([[1]])
 
 
 # ============================================================
@@ -533,6 +620,14 @@ def test_element_lookup_string_element():
     assert relation.element_lookup("a") == ((0, 0), (1, 0))
 
 
+def test_element_lookup_uses_python_equality_for_matching():
+    relation = PowerRelation.from_nested([
+        [[1]],
+    ])
+
+    assert relation.element_lookup(True) == ((0, 0),)
+
+
 # ============================================================
 # compare tests
 # ============================================================
@@ -550,7 +645,7 @@ def test_compare_first_strictly_worse():
 
 
 def test_compare_indifferent():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.compare([1], [2]) == 0
 
@@ -585,24 +680,30 @@ def test_compare_order_independent():
     assert relation.compare([2, 1], [1]) == 1
 
 
+def test_compare_accepts_compact_string_input():
+    relation = PowerRelation.from_string("12 > 1 > 2")
+
+    assert relation.compare("12", "1") == 1
+
+
 def test_compare_missing_first_raises_error():
     relation = PowerRelation.from_string("12 > 1 > {}")
 
-    with pytest.raises(ValueError, match="first coalition"):
+    with pytest.raises(ValueError, match="both coalitions must appear"):
         relation.compare([2], [1])
 
 
 def test_compare_missing_second_raises_error():
     relation = PowerRelation.from_string("12 > 1 > {}")
 
-    with pytest.raises(ValueError, match="second coalition"):
+    with pytest.raises(ValueError, match="both coalitions must appear"):
         relation.compare([1], [2])
 
 
 def test_compare_both_missing_raises_first_error():
     relation = PowerRelation.from_string("1 > {}")
 
-    with pytest.raises(ValueError, match="first coalition"):
+    with pytest.raises(ValueError, match="both coalitions must appear"):
         relation.compare([2], [3])
 
 
@@ -623,7 +724,7 @@ def test_strictly_prefers_false_when_worse():
 
 
 def test_strictly_prefers_false_when_equal():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.strictly_prefers([1], [2]) is False
 
@@ -646,7 +747,7 @@ def test_weakly_prefers_true_when_better():
 
 
 def test_weakly_prefers_true_when_equal():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.weakly_prefers([1], [2]) is True
 
@@ -669,7 +770,7 @@ def test_weakly_prefers_raises_for_missing_coalition():
 # ============================================================
 
 def test_coalitions_are_indifferent_true_for_tie():
-    relation = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    relation = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert relation.coalitions_are_indifferent([1], [2]) is True
 
@@ -714,7 +815,7 @@ def test_equal_relations_from_nested_and_string():
         [[1], [2]],
         [[]],
     ])
-    second = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    second = PowerRelation.from_string("12 > (1 ~ 2) > {}")
 
     assert first == second
 
@@ -740,7 +841,7 @@ def test_not_equal_when_class_order_differs():
 
 
 def test_not_equal_when_number_of_classes_differs():
-    first = PowerRelation.from_string("12 > 1 ~ 2")
+    first = PowerRelation.from_string("12 > (1 ~ 2)")
     second = PowerRelation.from_string("12 > 1 > 2")
 
     assert first != second
@@ -753,7 +854,7 @@ def test_not_equal_to_unrelated_object():
 
 
 def test_hash_equal_for_equal_relations():
-    first = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    first = PowerRelation.from_string("12 > (1 ~ 2) > {}")
     second = PowerRelation.from_nested([
         [[1, 2]],
         [[2], [1]],
@@ -763,8 +864,27 @@ def test_hash_equal_for_equal_relations():
     assert hash(first) == hash(second)
 
 
+def test_hash_equal_when_tied_coalition_order_differs():
+    first = PowerRelation.from_nested([
+        [[1], [2]],
+    ])
+    second = PowerRelation.from_nested([
+        [[2], [1]],
+    ])
+
+    assert first == second
+    assert hash(first) == hash(second)
+
+
+def test_not_equal_when_same_coalitions_have_different_class_structure():
+    first = PowerRelation.from_string("12 > (1 ~ 2)")
+    second = PowerRelation.from_string("(12 ~ 1) > 2")
+
+    assert first != second
+
+
 def test_relation_can_be_used_in_set():
-    first = PowerRelation.from_string("12 > 1 ~ 2 > {}")
+    first = PowerRelation.from_string("12 > (1 ~ 2) > {}")
     second = PowerRelation.from_nested([
         [[1, 2]],
         [[2], [1]],
@@ -801,7 +921,7 @@ def test_str_compact_letters():
 
 
 def test_str_tied_class_has_parentheses():
-    relation = PowerRelation.from_string("1 ~ 2 > {}")
+    relation = PowerRelation.from_string("(1 ~ 2) > {}")
 
     assert str(relation) == "(1 ~ 2) > {}"
 
@@ -818,7 +938,7 @@ def test_str_noncompact_for_multi_character_element():
         [["player1"]],
     ])
 
-    assert str(relation) == "{player1, player2} > {player1}"
+    assert str(relation) == "{'player1', 'player2'} > {'player1'}"
 
 
 def test_str_noncompact_for_number_with_two_digits():
@@ -827,7 +947,7 @@ def test_str_noncompact_for_number_with_two_digits():
         [[10]],
     ])
 
-    assert str(relation) == "{2, 10} > {10}"
+    assert str(relation) == "{10, 2} > {10}"
 
 
 def test_str_empty_coalition_in_noncompact_relation():
@@ -836,7 +956,7 @@ def test_str_empty_coalition_in_noncompact_relation():
         [[]],
     ])
 
-    assert str(relation) == "{player1} > {}"
+    assert str(relation) == "{'player1'} > {}"
 
 
 def test_str_mixed_type_relation():
@@ -847,6 +967,14 @@ def test_str_mixed_type_relation():
     ])
 
     assert str(relation) == "1a > 1 > a"
+
+
+def test_str_noncompact_when_string_digit_would_not_round_trip():
+    relation = PowerRelation.from_nested([
+        [["1"]],
+    ])
+
+    assert str(relation) == "{'1'}"
 
 
 # ============================================================
@@ -912,7 +1040,7 @@ def test_single_element_as_string_is_one_element_coalition():
     ])
 
     assert relation.coalition_lookup("ab") == 0
-    assert str(relation) == "{ab}"
+    assert str(relation) == "{'ab'}"
 
 
 def test_list_of_strings_is_coalition_of_strings():
