@@ -1,31 +1,23 @@
-"""Represent power relations as ordered equivalence classes of coalitions."""
+"""Power relation representation for ordered coalitions."""
 
 from __future__ import annotations
-
 from dataclasses import dataclass
-import re
-from typing import Hashable
+from typing import Hashable, Iterable, TypeAlias
 
 
-Element = Hashable
-Coalition = tuple[Element, ...]
-EquivalenceClass = tuple[Coalition, ...]
-LookupIndex = int | None
-ElementLocation = tuple[int, int]
+Element: TypeAlias = Hashable
+Coalition: TypeAlias = tuple[Element, ...]
+EquivalenceClass: TypeAlias = tuple[Coalition, ...]
+CoalitionInput: TypeAlias = list[Element] | tuple[Element, ...] | Element
+LookupIndex: TypeAlias = int | None
+ElementLocation: TypeAlias = tuple[int, int]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class PowerRelation:
     """Ordered equivalence classes of coalitions.
-
-    A power relation ranks coalitions from best to worst.
-
-    Example:
-        12 > 1 ~ 2 > {}
-
-    means:
-        coalition {1, 2} is better than coalitions {1} and {2},
-        which are tied, and both are better than the empty coalition.
+    A power relation ranks coalitions from best to worst. Coalitions inside the
+    same equivalence class are considered equally good.
     """
 
     equivalence_classes: tuple[EquivalenceClass, ...]
@@ -35,241 +27,179 @@ class PowerRelation:
         object.__setattr__(self, "equivalence_classes", normalized)
 
     @classmethod
-    def from_nested(cls, equivalence_classes: list[list[list[Element]]]) -> "PowerRelation":
-        """Create a power relation from nested Python lists.
-
+    def from_nested(cls, equivalence_classes: Iterable[Iterable[Iterable[Element]]]) -> PowerRelation:
+        """Create a power relation from nested Python iterables.
         Example:
             PowerRelation.from_nested([
                 [[1, 2]],
                 [[1], [2]],
                 [[]],
             ])
-
-        represents:
-            12 > (1 ~ 2) > {}
         """
+        normalized_input: list[EquivalenceClass] = []
 
-        return cls(
-            tuple(
-                tuple(tuple(coalition) for coalition in equivalence_class)
-                for equivalence_class in equivalence_classes
-            )
-        )
+        for equivalence_class_index, equivalence_class in enumerate(equivalence_classes):
+            normalized_class: list[Coalition] = []
+
+            for coalition in equivalence_class:
+                if not isinstance(coalition, (list, tuple)):
+                    raise TypeError(
+                        "from_nested expects each coalition to be a list or tuple; "
+                        f"invalid coalition in equivalence class {equivalence_class_index}"
+                    )
+                normalized_class.append(tuple(coalition))
+
+            normalized_input.append(tuple(normalized_class))
+
+        return cls(tuple(normalized_input))
 
     @classmethod
-    def from_string(cls, value: str) -> "PowerRelation":
-        """Create a power relation from a compact string.
-
+    def from_string(cls, value: str) -> PowerRelation:
+        """Create a power relation from compact notation.
         Supported examples:
             "12 > 1 > 2"
-            "12 > 1 ~ 2 > {}"
-            "ab > a > b"
-            "(1 ~ 2) > {}"
-
-        Important:
-            This compact parser reads every character as one element.
-            Therefore "10" is interpreted as coalition {1, 0}, not element 10.
+            "12 > (1 ~ 2) > {}"
+        Digits are parsed as integers. Letters are parsed as strings.
+        The empty coalition is written as "{}".
         """
-
         if not isinstance(value, str):
-            raise TypeError("power relation value must be a string")
+            raise TypeError("value must be a string")
 
         tokens = _tokenize_power_relation_string(value)
-
-        if not tokens:
-            raise ValueError("power relation string must contain at least one coalition")
-
-        equivalence_classes: list[list[list[Element]]] = []
-        current_class: list[list[Element]] = []
-        current_coalition: list[Element] | None = None
-
-        expecting_coalition = True
-
-        for token in tokens:
-            if token == ">":
-                if expecting_coalition:
-                    raise ValueError("malformed power relation string")
-
-                assert current_coalition is not None
-                current_class.append(current_coalition)
-                equivalence_classes.append(current_class)
-
-                current_class = []
-                current_coalition = None
-                expecting_coalition = True
-
-            elif token == "~":
-                if expecting_coalition:
-                    raise ValueError("malformed power relation string")
-
-                assert current_coalition is not None
-                current_class.append(current_coalition)
-
-                current_coalition = None
-                expecting_coalition = True
-
-            else:
-                if not expecting_coalition:
-                    raise ValueError("missing separator between coalitions")
-
-                current_coalition = _parse_coalition_token(token)
-                expecting_coalition = False
-
-        if expecting_coalition:
-            raise ValueError("malformed power relation string")
-
-        assert current_coalition is not None
-        current_class.append(current_coalition)
-        equivalence_classes.append(current_class)
+        equivalence_classes = _parse_power_relation_tokens(tokens)
 
         return cls.from_nested(equivalence_classes)
 
     @property
     def elements(self) -> tuple[Element, ...]:
-        """Return unique elements appearing in the relation, sorted for stable output."""
-
+        """Unique elements appearing in the relation."""
         elements = {
             element
             for equivalence_class in self.equivalence_classes
             for coalition in equivalence_class
             for element in coalition
         }
-
         return tuple(sorted(elements, key=_element_sort_key))
 
     @property
     def coalitions(self) -> tuple[Coalition, ...]:
-        """Return all coalitions in the relation, from best class to worst class."""
-
+        """All coalitions appearing in the relation."""
         return tuple(
             coalition
             for equivalence_class in self.equivalence_classes
             for coalition in equivalence_class
         )
 
-    def coalition_lookup(
-        self,
-        coalition: list[Element] | tuple[Element, ...] | Element,
-    ) -> LookupIndex:
-        """Return the zero-based equivalence-class index containing `coalition`.
+#this is used to match R library    
+    @property
+    def eqs(self) -> tuple[EquivalenceClass, ...]:
+        """Alias matching the R object's `eqs` field."""
+        return self.equivalence_classes
 
-        Lower index means better coalition.
-
-        Returns:
-            int | None
+    def coalition_lookup(self, coalition: CoalitionInput) -> LookupIndex:
+        """Return the rank index of a coalition, or None if it is missing.
+        Indexes are zero-based, so 0 is the best equivalence class.
         """
-
-        key = _coerce_coalition(coalition)
-
-        for index, equivalence_class in enumerate(self.equivalence_classes):
-            if key in equivalence_class:
-                return index
-
+        exact_match = self._find_coalition_index(_coerce_coalition(coalition))
+        if exact_match is not None:
+            return exact_match
+        if isinstance(coalition, str):
+            return self._compact_lookup_fallback(coalition)
         return None
 
-    def coalition_position(
-        self,
-        coalition: list[Element] | tuple[Element, ...] | Element,
-    ) -> tuple[int, int] | None:
-        """Return the exact location of a coalition.
-
-        Returns:
-            (equivalence_class_index, coalition_index)
-
-        or:
-            None if the coalition does not appear.
-        """
-
-        key = _coerce_coalition(coalition)
-
-        for equivalence_class_index, equivalence_class in enumerate(self.equivalence_classes):
-            for coalition_index, existing_coalition in enumerate(equivalence_class):
-                if key == existing_coalition:
-                    return (equivalence_class_index, coalition_index)
-
+    def coalition_position(self, coalition: CoalitionInput) -> ElementLocation | None:
+        """Return the exact position of a coalition as `(rank_index, coalition_index)`."""
+        exact_match = self._find_coalition_position(_coerce_coalition(coalition))
+        if exact_match is not None:
+            return exact_match
+        if isinstance(coalition, str):
+            compact_coalition = self._parse_compact_lookup(coalition)
+            if compact_coalition is not None:
+                return self._find_coalition_position(compact_coalition)
         return None
 
     def element_lookup(self, element: Element) -> tuple[ElementLocation, ...]:
-        """Return locations of coalitions containing `element`.
-
-        Each location is:
+        """Return locations of coalitions containing `element`."""
+        return tuple(
             (equivalence_class_index, coalition_index)
-        """
+            for equivalence_class_index, equivalence_class in enumerate(self.equivalence_classes)
+            for coalition_index, coalition in enumerate(equivalence_class)
+            if element in coalition
+        )
 
-        locations: list[ElementLocation] = []
-
-        for equivalence_class_index, equivalence_class in enumerate(self.equivalence_classes):
-            for coalition_index, coalition in enumerate(equivalence_class):
-                if element in coalition:
-                    locations.append((equivalence_class_index, coalition_index))
-
-        return tuple(locations)
-
-    def compare(
-        self,
-        first: list[Element] | tuple[Element, ...] | Element,
-        second: list[Element] | tuple[Element, ...] | Element,
-    ) -> int:
+    def compare(self, first: CoalitionInput, second: CoalitionInput) -> int:
         """Compare two coalitions.
-
         Returns:
-            1  if first is strictly better than second
-            0  if first and second are indifferent
+            1 if first is strictly better than second
+            0 if they are indifferent
             -1 if first is strictly worse than second
-
-        Raises:
-            ValueError if one of the coalitions is missing.
         """
-
         first_index = self.coalition_lookup(first)
         second_index = self.coalition_lookup(second)
 
-        if first_index is None:
-            raise ValueError(f"first coalition {first!r} is not in the power relation")
-
-        if second_index is None:
-            raise ValueError(f"second coalition {second!r} is not in the power relation")
-
+        if first_index is None or second_index is None:
+            raise ValueError("both coalitions must appear in the power relation")
         if first_index < second_index:
             return 1
-
         if first_index > second_index:
             return -1
-
         return 0
 
-    def strictly_prefers(
-        self,
-        first: list[Element] | tuple[Element, ...] | Element,
-        second: list[Element] | tuple[Element, ...] | Element,
-    ) -> bool:
-        """Return whether `first` is strictly better than `second`."""
-
+    def strictly_prefers(self, first: CoalitionInput, second: CoalitionInput) -> bool:
+        """Return whether `first` is strictly preferred to `second`."""
         return self.compare(first, second) == 1
 
-    def weakly_prefers(
-        self,
-        first: list[Element] | tuple[Element, ...] | Element,
-        second: list[Element] | tuple[Element, ...] | Element,
-    ) -> bool:
+    def weakly_prefers(self, first: CoalitionInput, second: CoalitionInput) -> bool:
         """Return whether `first` is at least as good as `second`."""
-
         return self.compare(first, second) >= 0
 
-    def coalitions_are_indifferent(
-        self,
-        first: list[Element] | tuple[Element, ...] | Element,
-        second: list[Element] | tuple[Element, ...] | Element,
-    ) -> bool:
-        """Return whether two coalitions are in the same equivalence class.
-
-        Missing coalitions are not treated as indifferent.
-        """
-
+    def coalitions_are_indifferent(self, first: CoalitionInput, second: CoalitionInput) -> bool:
+        """Return whether two existing coalitions are in the same equivalence class."""
         first_index = self.coalition_lookup(first)
         second_index = self.coalition_lookup(second)
 
-        return first_index is not None and first_index == second_index
+        if first_index is None or second_index is None:
+            return False
+
+        return first_index == second_index
+
+    def _find_coalition_index(self, coalition: Coalition) -> LookupIndex:
+        for index, equivalence_class in enumerate(self.equivalence_classes):
+            if coalition in equivalence_class:
+                return index
+        return None
+
+    def _find_coalition_position(self, coalition: Coalition) -> ElementLocation | None:
+        for equivalence_class_index, equivalence_class in enumerate(self.equivalence_classes):
+            for coalition_index, candidate in enumerate(equivalence_class):
+                if candidate == coalition:
+                    return (equivalence_class_index, coalition_index)
+        return None
+
+    def _compact_lookup_fallback(self, value: str) -> LookupIndex:
+        compact_coalition = self._parse_compact_lookup(value)
+        if compact_coalition is None:
+            return None
+        return self._find_coalition_index(compact_coalition)
+
+    def _parse_compact_lookup(self, value: str) -> Coalition | None:
+        cleaned = "".join(character for character in value if not character.isspace())
+
+        if cleaned == "{}":
+            return ()
+
+        if not cleaned or not all(character.isalnum() for character in cleaned):
+            return None
+
+        coalition = tuple(_parse_compact_element(character) for character in cleaned)
+
+        if not all(_contains_exact_element(self.elements, element) for element in coalition):
+            return None
+
+        try:
+            return _coerce_coalition(coalition)
+        except (TypeError, ValueError):
+            return None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, PowerRelation):
@@ -288,99 +218,86 @@ class PowerRelation:
         )
 
     def __hash__(self) -> int:
-        return hash(
-            tuple(
-                frozenset(equivalence_class)
-                for equivalence_class in self.equivalence_classes
-            )
-        )
+        return hash(tuple(frozenset(equivalence_class) for equivalence_class in self.equivalence_classes))
 
     def __str__(self) -> str:
         compact = self._uses_compact_format()
         formatted_classes: list[str] = []
 
         for equivalence_class in self.equivalence_classes:
-            coalitions = [
-                _format_coalition(coalition, compact)
-                for coalition in equivalence_class
-            ]
+            formatted_coalitions = [_format_coalition(coalition, compact) for coalition in equivalence_class]
 
-            if len(coalitions) == 1:
-                formatted_classes.append(coalitions[0])
+            if len(formatted_coalitions) == 1:
+                formatted_classes.append(formatted_coalitions[0])
             else:
-                formatted_classes.append(f"({' ~ '.join(coalitions)})")
+                formatted_classes.append(f"({' ~ '.join(formatted_coalitions)})")
 
         return " > ".join(formatted_classes)
 
     def _uses_compact_format(self) -> bool:
-        return all(len(str(element)) == 1 for element in self.elements)
+        element_texts = [str(element) for element in self.elements]
+
+        if len(element_texts) != len(set(element_texts)):
+            return False
+
+        for element, text in zip(self.elements, element_texts, strict=True):
+            if len(text) != 1 or not text.isalnum():
+                return False
+
+            parsed = _parse_compact_element(text)
+            if type(parsed) is not type(element) or parsed != element:
+                return False
+
+        return True
 
 
-def _normalize_equivalence_classes(
-    equivalence_classes: tuple[EquivalenceClass, ...],
-) -> tuple[EquivalenceClass, ...]:
-    if not equivalence_classes:
-        raise ValueError("must supply at least one equivalence class")
-
+def _normalize_equivalence_classes(equivalence_classes: Iterable[Iterable[CoalitionInput]]) -> tuple[EquivalenceClass, ...]:
     normalized: list[EquivalenceClass] = []
     seen_coalitions: set[Coalition] = set()
 
-    for index, equivalence_class in enumerate(equivalence_classes):
-        if not equivalence_class:
-            raise ValueError(f"equivalence class at index {index} must not be empty")
+    for equivalence_class_index, equivalence_class in enumerate(equivalence_classes):
+        normalized_class = tuple(_coerce_coalition(coalition) for coalition in equivalence_class)
 
-        normalized_class: list[Coalition] = []
+        if not normalized_class:
+            raise ValueError(f"equivalence class at index {equivalence_class_index} must not be empty")
 
-        for coalition in equivalence_class:
-            normalized_coalition = _coerce_coalition(coalition)
+        for coalition in normalized_class:
+            if coalition in seen_coalitions:
+                raise ValueError(f"duplicate coalition found: {coalition}")
+            seen_coalitions.add(coalition)
 
-            if normalized_coalition in seen_coalitions:
-                raise ValueError("coalition must not appear more than once")
+        normalized.append(normalized_class)
 
-            seen_coalitions.add(normalized_coalition)
-            normalized_class.append(normalized_coalition)
-
-        normalized.append(tuple(normalized_class))
+    if not normalized:
+        raise ValueError("must supply at least one equivalence class")
 
     return tuple(normalized)
 
 
-def _coerce_coalition(
-    coalition: list[Element] | tuple[Element, ...] | Element,
-) -> Coalition:
-    """Normalize a coalition.
-
-    Lists and tuples are interpreted as coalitions.
-
-    Single values are interpreted as one-element coalitions.
-
-    Example:
-        [2, 1] becomes (1, 2)
-        1 becomes (1,)
-        "a" becomes ("a",)
-    """
-
+def _coerce_coalition(coalition: CoalitionInput) -> Coalition:
     if isinstance(coalition, (list, tuple)):
-        try:
-            unique_elements = set(coalition)
-        except TypeError as error:
-            raise TypeError("coalition elements must be hashable") from error
-
-        if len(coalition) != len(unique_elements):
-            raise ValueError("coalition must not contain duplicate elements")
-
-        return tuple(sorted(coalition, key=_element_sort_key))
+        raw_coalition = tuple(coalition)
+    else:
+        raw_coalition = (coalition,)
 
     try:
-        hash(coalition)
+        unique_elements = set(raw_coalition)
     except TypeError as error:
-        raise TypeError("coalition must be hashable or a list/tuple of hashable elements") from error
+        raise TypeError("coalition elements must be hashable") from error
 
-    return (coalition,)
+    if len(raw_coalition) != len(unique_elements):
+        raise ValueError("coalition must not contain duplicate elements")
+
+    return tuple(sorted(raw_coalition, key=_element_sort_key))
 
 
-def _element_sort_key(element: Element) -> tuple[str, str]:
-    return (type(element).__name__, repr(element))
+def _element_sort_key(element: Element) -> tuple[str, str, str]:
+    element_type = type(element)
+    return (element_type.__module__, element_type.__qualname__, repr(element))
+
+
+def _contains_exact_element(elements: Iterable[Element], target: Element) -> bool:
+    return any(type(element) is type(target) and element == target for element in elements)
 
 
 def _format_coalition(coalition: Coalition, compact: bool) -> str:
@@ -390,49 +307,99 @@ def _format_coalition(coalition: Coalition, compact: bool) -> str:
     if compact:
         return "".join(str(element) for element in coalition)
 
-    return "{" + ", ".join(str(element) for element in coalition) + "}"
+    return "{" + ", ".join(repr(element) for element in coalition) + "}"
 
 
 def _tokenize_power_relation_string(value: str) -> list[str]:
-    """Tokenize a compact power relation string.
+    cleaned = "".join(character for character in value if not character.isspace())
 
-    Removes whitespace and parentheses.
+    if not cleaned:
+        raise ValueError("power relation string must not be empty")
 
-    Keeps:
-        >
-        ~
-        {}
-        alphanumeric coalition tokens
-    """
+    tokens: list[str] = []
+    index = 0
 
-    stripped = value.replace(" ", "")
-    stripped = stripped.replace("(", "")
-    stripped = stripped.replace(")", "")
+    while index < len(cleaned):
+        character = cleaned[index]
 
-    if not stripped:
-        raise ValueError("power relation string must contain at least one coalition")
-
-    token_pattern = r"\{\}|[0-9a-zA-Z]+|>|~"
-    tokens = re.findall(token_pattern, stripped)
-
-    reconstructed = "".join(tokens)
-
-    if reconstructed != stripped:
-        raise ValueError(f"invalid character in power relation string: {value!r}")
+        if cleaned.startswith("{}", index):
+            tokens.append("{}")
+            index += 2
+        elif character in {"(", ")", ">", "~"}:
+            tokens.append(character)
+            index += 1
+        elif character.isalnum():
+            start = index
+            while index < len(cleaned) and cleaned[index].isalnum():
+                index += 1
+            tokens.append(cleaned[start:index])
+        else:
+            raise ValueError(f"unsupported character in power relation string: {character!r}")
 
     return tokens
+
+
+def _parse_power_relation_tokens(tokens: list[str]) -> list[list[list[Element]]]:
+    equivalence_classes: list[list[list[Element]]] = []
+    index = 0
+
+    while index < len(tokens):
+        equivalence_class: list[list[Element]] = []
+
+        if tokens[index] == "(":
+            index += 1
+
+            if index >= len(tokens) or tokens[index] in {")", ">", "~"}:
+                raise ValueError("empty or malformed equivalence class")
+
+            while True:
+                if tokens[index] in {"(", ")", ">", "~"}:
+                    raise ValueError("expected coalition inside equivalence class")
+
+                equivalence_class.append(_parse_coalition_token(tokens[index]))
+                index += 1
+
+                if index >= len(tokens):
+                    raise ValueError("missing closing parenthesis")
+                if tokens[index] == "~":
+                    index += 1
+                    if index >= len(tokens) or tokens[index] in {")", ">", "~"}:
+                        raise ValueError("missing coalition after '~'")
+                    continue
+                if tokens[index] == ")":
+                    index += 1
+                    break
+                raise ValueError("expected '~' or ')' inside equivalence class")
+        else:
+            if tokens[index] in {")", ">", "~"}:
+                raise ValueError("expected coalition")
+            equivalence_class.append(_parse_coalition_token(tokens[index]))
+            index += 1
+
+        equivalence_classes.append(equivalence_class)
+
+        if index == len(tokens):
+            break
+        if tokens[index] != ">":
+            raise ValueError("expected '>' between equivalence classes")
+        index += 1
+        if index == len(tokens):
+            raise ValueError("missing equivalence class after '>'")
+
+    return equivalence_classes
 
 
 def _parse_coalition_token(token: str) -> list[Element]:
     if token == "{}":
         return []
 
-    coalition: list[Element] = []
+    if "{" in token or "}" in token:
+        raise ValueError("only the empty coalition '{}' may use braces")
 
-    for char in token:
-        if char.isdigit():
-            coalition.append(int(char))
-        else:
-            coalition.append(char)
+    return [_parse_compact_element(character) for character in token]
 
-    return coalition
+
+def _parse_compact_element(character: str) -> Element:
+    if character.isdigit():
+        return int(character)
+    return character
