@@ -15,7 +15,8 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8"
+  "pytest>=8",
+  "hypothesis>=6.0"
 ]
 
 [tool.setuptools.packages.find]
