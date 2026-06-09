@@ -33,22 +33,22 @@
 
 The first step of the project was to create the skeleton of a Python library.
 The goal is to port functions from the original R package into a Python package
-that can be installed, imported, tested, and reused by other Python users.
+that can be installed, imported, tested and reused by other Python users.
 
 \section{Current Project Structure}
 
 The current project skeleton is shown on the next page. The diagram separates
-the package configuration, the Python source code, the tests, and the original
+the package configuration, the Python source code, the tests and the original
 R reference files.
 
 \begin{landscape}
 \thispagestyle{empty}
-\vspace*{-0.35cm}
+\vspace*{-0.75cm}
 \begin{center}
 {\Huge\bfseries Current Python Library Skeleton}
 
 \vspace{0.25cm}
-{\large The project is split into configuration, importable source code, tests, and original R reference files.}
+{\large The project is split into configuration, importable source code, tests and original R reference files.}
 \end{center}
 
 \vspace{0.35cm}
@@ -81,6 +81,7 @@ Python Library EAI/ & <- main project folder \\
 |       |-- rankings.py & <- algorithms: lexcel, cumulative, Banzhaf, etc. \\
 |-- tests/ & <- automated checks for the Python port \\
 |   |-- test\_helpers.py & <- verifies helper behavior against R logic \\
+|   |-- test\_power\_relation.py & <- verifies PowerRelation behavior \\
 |   |-- test\_package\_import.py & <- verifies the package imports correctly \\
 |-- R- Library functions/ & <- original R code; source of truth for the port \\
     |-- PowerRelation.R & <- first major file to port; dependency core \\
@@ -110,7 +111,7 @@ makes the result installable and reusable.
 \subsection{\texttt{pyproject.toml}}
 
 This file defines the Python package. It tells Python the package name,
-the package version, where the source code is located, and how tests should be
+the package version, where the source code is located and how tests should be
 configured.
 
 \subsubsection*{Line-by-line explanation}
@@ -203,7 +204,7 @@ Python library.
 \subsection{\texttt{README.md}}
 
 This file explains the project. It includes basic development instructions,
-such as how to create a virtual environment, install the package locally, and
+such as how to create a virtual environment, install the package locally and
 run tests.
 
 \subsection{\texttt{src/socialranking/}}
@@ -220,14 +221,635 @@ from socialranking import PowerRelation
 This folder contains tests. Tests are used to verify that each function behaves
 like the original R implementation.
 
-\subsection{\texttt{R- Library functions/}}
 
-This folder contains the original R files. These files are the reference
-implementation that will be ported to Python step by step.
+\section{Implementation Progress}
+
+After creating the package skeleton, the first implemented parts of the
+library were \texttt{helpers.py} and \texttt{power\_relation.py}. This was not
+an arbitrary choice. In the R code, most ranking methods are built on top of
+coalitions and power relations. Therefore, before implementing a ranking
+method, the Python package first needs a reliable way to create coalitions and
+to represent a ranking between coalitions.
+
+\subsection{Implemented File 1: \texttt{helpers.py}}
+
+\subsubsection*{Purpose of the file}
+
+\texttt{helpers.py} is reserved for small functions that are useful in several
+parts of the library. These functions should not represent a full mathematical
+object by themselves; instead, they support the larger objects and algorithms.
+The first helper implemented is \texttt{create\_powerset}, because many social
+ranking functions need to work with all possible coalitions of a set of
+individuals.
+
+\subsubsection*{Function: \texttt{create\_powerset}}
+
+\begin{center}
+\begin{tabularx}{0.95\linewidth}{@{}p{4cm}Y@{}}
+\toprule
+\textbf{Aspect} & \textbf{Explanation} \\
+\midrule
+\textbf{Name}
+& \texttt{create\_powerset(elements, include\_empty\_set=True)} \\
+\textbf{Input}
+& An iterable of elements, for example \texttt{[1, 2, 3]} or
+\texttt{["a", "b", "c"]}. The function also accepts generators. \\
+\textbf{Output}
+& A list of coalitions. Each coalition is represented as a tuple. For
+\texttt{[1,2,3]}, the output starts with \texttt{(1,2,3)}, then coalitions of
+size two, then coalitions of size one and finally \texttt{()} if the empty
+coalition is included. \\
+\textbf{Main role}
+& It creates all possible coalitions from a set of elements. In social ranking
+and cooperative game theory, coalitions are subsets of players or alternatives.
+Later ranking methods need these coalitions to compute scores or compare
+individuals. \\
+\textbf{Ordering rule}
+& Coalitions are ordered from largest size to smallest size. Inside each size,
+the order follows the original input order. This is important because it makes
+the function predictable and close to the R helper behavior. \\
+\textbf{Validation}
+& The function rejects duplicate elements and rejects non-hashable elements.
+This prevents ambiguous coalitions such as \texttt{[1,1]} and invalid elements
+such as lists inside coalitions. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\paragraph{Example.}
+
+\begin{verbatim}
+create_powerset([1, 2, 3])
+\end{verbatim}
+
+\noindent returns:
+
+\begin{verbatim}
+[(1, 2, 3), (1, 2), (1, 3), (2, 3), (1,), (2,), (3,), ()]
+\end{verbatim}
+
+\subsubsection*{Why the function is written this way}
+
+The result uses tuples instead of lists because tuples are immutable and
+hashable when their elements are hashable. This matters because coalitions are
+later stored in sets, compared and used as keys in lookup logic. A list such
+as \texttt{[1,2]} can be changed after creation, but a tuple such as
+\texttt{(1,2)} is stable. This makes the behavior safer for a library.
+
+The function also has the option \texttt{include\_empty\_set}. In many
+mathematical settings the empty coalition is part of the powerset, but some
+algorithms may want to ignore it. Keeping the option makes the function more
+flexible while preserving the mathematically complete default.
+
+\subsubsection*{Tests for \texttt{create\_powerset}: what was checked and why}
+
+\begin{center}
+\begin{tabularx}{0.95\linewidth}{@{}p{5.2cm}Y@{}}
+\toprule
+\textbf{Test category} & \textbf{Reason for the test} \\
+\midrule
+Normal coalition creation
+& Checks that a simple input such as \texttt{[1,2,3]} produces the expected
+coalitions. This verifies the basic function behavior. \\
+Largest-to-smallest order
+& Confirms that coalitions are grouped by decreasing size. This matters because later algorithms may rely on stable
+ordering. \\
+Preservation of input order
+& Checks that inside each coalition size, the order follows the original input.
+For example, \texttt{["a","b","c"]} gives \texttt{("a","b")} before
+\texttt{("a","c")}. \\
+Empty coalition included or excluded
+& Checks both \texttt{include\_empty\_set=True} and
+\texttt{include\_empty\_set=False}. This verifies that the optional argument
+works correctly. \\
+Empty input
+& Checks that the powerset of an empty set is \texttt{[()]}. This is the
+mathematically correct result when the empty coalition is included. \\
+Generator input
+& Verifies that the function accepts general iterables, not only lists. This
+makes the function more Pythonic. \\
+Tuple elements and string input
+& Checks that the function works with different hashable element types, not
+only integers. \\
+Duplicate rejection
+& Prevents ambiguous input such as \texttt{[1,1]}, where it is unclear whether
+there is one player named \texttt{1} or two identical entries. \\
+Non-hashable rejection
+& Prevents elements such as lists, which cannot safely be used inside sets or
+dictionary keys. \\
+Output length
+& Confirms the mathematical size of the result:
+\texttt{2\^{}n} with the empty coalition and \texttt{2\^{}n - 1} without it. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection*{Current limitations of \texttt{create\_powerset}}
+
+\begin{itemize}
+  \item The function builds the full list in memory. This is acceptable for
+  small examples, but it becomes expensive very quickly because the number of
+  coalitions is exponential. With 20 elements, the full powerset already has more than one million
+  coalitions. With 30 elements, the result is too large for ordinary use.
+  \item The function does not currently support a lazy generator version. A
+  lazy version would produce coalitions one by one instead of storing the
+  entire list at once.
+  \item The function treats Python equality as the definition of duplicate
+  elements. For example, Python considers \texttt{1 == True}. This can matter
+  if mixed element types are used.
+\end{itemize}
+
+\subsubsection*{Possible improvements for \texttt{create\_powerset}}
+
+\begin{itemize}
+  \item Add a lazy version, for example \texttt{iter\_powerset}, for large
+  examples.
+  \item Add documentation warning users that the number of coalitions grows as
+  \texttt{2\^{}n}.
+  \item Decide whether the library should forbid mixed element types such as
+  integers and booleans, because Python equality can create surprising
+  duplicate behavior.
+\end{itemize}
+
+\subsection{Implemented File 2: \texttt{power\_relation.py}}
+
+\subsubsection*{Purpose of the file}
+
+\texttt{power\_relation.py} contains the first central object in the Python
+port: \texttt{PowerRelation}. A power relation is an ordered ranking of
+coalitions. Each level of the ranking is an equivalence class. Coalitions in
+the same equivalence class are indifferent, meaning that the relation does not
+rank one above the other.
+
+\paragraph{Mathematical interpretation.}
+If the relation is written as:
+
+\begin{verbatim}
+12 > (1 ~ 2) > {}
+\end{verbatim}
+
+\noindent it means:
+
+\begin{itemize}
+  \item coalition \texttt{12} is better than coalition \texttt{1};
+  \item coalition \texttt{12} is also better than coalition \texttt{2};
+  \item coalitions \texttt{1} and \texttt{2} are tied;
+  \item the empty coalition \texttt{\{\}} is worst.
+\end{itemize}
+
+\noindent This object is needed before implementing ranking methods because
+ranking methods such as lexicographical excellence need to inspect where each
+coalition appears in the power relation.
+
+\subsubsection*{Main design decisions}
+
+\begin{itemize}
+  \item Coalitions are stored as tuples, not lists, because tuples are stable
+  and hashable.
+  \item Equivalence classes are stored as tuples of coalitions.
+  \item The full relation is stored as a tuple of equivalence classes.
+  \item The object is frozen with \texttt{@dataclass(frozen=True)}, so it
+  cannot be modified after construction.
+  \item The class uses \texttt{eq=False} because equality is custom: two power
+  relations are equal if they have the same ordered equivalence classes, even
+  if coalitions inside a tied class are listed in a different order.
+  \item The string parser is intentionally strict. It accepts compact notation
+  such as \texttt{"12 > (1 \string~ 2) > \{\}"}, but rejects malformed input.
+\end{itemize}
+
+\subsubsection*{Functions and methods in \texttt{PowerRelation}}
+
+\begin{description}
+  \item[\texttt{\_\_post\_init\_\_}]
+Runs automatically after the dataclass is created. It normalizes and
+validates the raw input. This is important because users can create the object
+directly or through helper constructors. The method ensures that the internal
+representation is always consistent.
+
+  \item[\texttt{from\_nested}]
+Creates a power relation from nested Python lists. This is the most explicit
+constructor and is useful when the relation is already available as structured
+data. It expects a list of equivalence classes, where each equivalence class is
+a list of coalitions.
+
+  \item[\texttt{from\_string}]
+Creates a power relation from compact notation. This is convenient for small
+examples and mirrors the style used in the R material. Digits are parsed as
+integers and letters are parsed as strings. The empty coalition is written as
+\texttt{\{\}}.
+
+  \item[\texttt{elements}]
+Returns all unique elements appearing anywhere in the relation. It ignores
+the empty coalition. This property is needed by later ranking functions,
+because they rank individual elements.
+
+  \item[\texttt{coalitions}]
+Returns all coalitions in the relation, ordered by equivalence class. This is
+useful when an algorithm needs to iterate over the complete relation.
+
+  \item[\texttt{eqs}]
+Alias for \texttt{equivalence\_classes}. It is useful for porting, but not
+strictly necessary for Python users(it was added to match the R library).
+
+  \item[\texttt{coalition\_lookup}]
+Returns the equivalence class index where a coalition appears. Index
+\texttt{0} means best. If the coalition is absent, it returns \texttt{None}.
+This is one of the most important methods because it turns a coalition into
+its rank position.
+
+  \item[\texttt{coalition\_position}]
+Returns the exact location of a coalition:
+\texttt{(equivalence\_class\_index, coalition\_index)}. This is more detailed
+than \texttt{coalition\_lookup}. It is useful for debugging and for checking
+the order of coalitions inside a tied class.
+
+  \item[\texttt{element\_lookup}]
+Returns all coalitions that contain a given element, using their positions in
+the relation. This will be useful later because many ranking methods compute
+scores for each individual element by looking at coalitions that contain that
+element.
+
+  \item[\texttt{compare}]
+Compares two coalitions. It returns \texttt{1} if the first coalition is
+better, \texttt{0} if they are tied and \texttt{-1} if the first coalition is
+worse. It raises an error if either coalition is not part of the relation.
+
+  \item[\texttt{strictly\_prefers}]
+Convenience method built on top of \texttt{compare}. It returns
+\texttt{True} only when the first coalition is strictly better than the
+second.
+
+  \item[\texttt{weakly\_prefers}]
+Convenience method built on top of \texttt{compare}. It returns
+\texttt{True} when the first coalition is better than or equal to the second.
+
+  \item[\texttt{coalitions\_are\_indifferent}]
+Checks whether two coalitions are in the same equivalence class. If one of
+the coalitions is missing, it returns \texttt{False}.
+
+  \item[\texttt{\_\_eq\_\_}]
+Defines equality between two power relations. The outer order of equivalence
+classes matters, because it represents the ranking. The order inside a tied
+class does not matter, because tied coalitions are mathematically equivalent.
+
+  \item[\texttt{\_\_hash\_\_}]
+Makes the object usable in sets and dictionary keys. It is written to be
+consistent with \texttt{\_\_eq\_\_}: equal relations have the same hash.
+
+  \item[\texttt{\_\_str\_\_}]
+Creates a readable string representation, such as
+\texttt{12 > (1 \string~ 2) > \{\}}. This is mainly for debugging, examples,
+and tests.
+\end{description}
+
+\subsubsection*{Internal helper functions in \texttt{power\_relation.py}}
+
+Several functions start with an underscore. They are internal helpers. They are
+not meant to be the public API, but they keep the main class readable.
+
+\begin{itemize}
+  \item \texttt{\_normalize\_equivalence\_classes}: validates and converts raw
+  input into the standard tuple-based representation.
+  \item \texttt{\_coerce\_coalition}: converts a list, tuple, or single element
+  into a normalized coalition tuple.
+  \item \texttt{\_element\_sort\_key}: gives a stable sorting rule, including
+  for mixed element types that Python cannot normally sort directly.
+  \item \texttt{\_format\_coalition}: converts one coalition into a readable
+  string.
+  \item \texttt{\_tokenize\_power\_relation\_string}: breaks compact string
+  notation into parser tokens.
+  \item \texttt{\_parse\_power\_relation\_tokens}: converts tokens into nested
+  coalition data.
+  \item \texttt{\_parse\_coalition\_token}: parses one coalition token.
+  \item \texttt{\_parse\_compact\_element}: converts digits to integers and
+  letters to strings.
+\end{itemize}
+
+\subsubsection*{Tests for \texttt{PowerRelation}: what was checked and why}
+
+\begin{center}
+\begin{tabularx}{0.97\linewidth}{@{}p{5.3cm}Y@{}}
+\toprule
+\textbf{Test category} & \textbf{Reason for the test} \\
+\midrule
+Construction from nested lists
+& Verifies the most explicit constructor. This is important because later code
+may build relations programmatically rather than from strings. \\
+Construction from strings
+& Verifies compact input such as \texttt{12 > (1 \string~ 2) > \{\}}. This is
+important for examples and for reproducing notation from the R code and
+papers. \\
+Indifference classes
+& Checks that coalitions inside parentheses with \texttt{\string~} are treated
+as tied. Without this, the relation would not represent equivalence classes
+correctly. \\
+Empty coalition
+& Checks that \texttt{\{\}} is parsed, stored, printed and looked up
+correctly. The empty coalition is mathematically important in powersets. \\
+Normalization
+& Checks that \texttt{[2,1]} and \texttt{[1,2]} are treated as the same
+coalition. Coalitions are sets conceptually, so order inside a coalition
+should not matter. \\
+Duplicate rejection
+& Checks that duplicate coalitions and duplicate elements inside one coalition
+are rejected. This prevents ambiguous or mathematically invalid relations. \\
+Malformed parser input
+& Checks invalid strings such as bad parentheses, invalid characters, missing
+coalitions and unsupported brace forms. This protects the library from
+silently accepting wrong notation. \\
+\texttt{elements} and \texttt{coalitions}
+& Checks that the object exposes the correct basic data for later algorithms. \\
+Lookup behavior
+& Checks lookup by list, tuple, single element, compact string and empty
+coalition. This matters because users may naturally provide coalitions in
+different forms. \\
+Comparison behavior
+& Checks \texttt{compare}, \texttt{strictly\_prefers} and
+\texttt{weakly\_prefers}. These methods are the direct way to ask which
+coalition is better. \\
+Indifference behavior
+& Checks that coalitions in the same equivalence class are correctly identified
+as indifferent. \\
+Equality and hashing
+& Checks that mathematically equivalent relations compare equal and have equal
+hashes. This is important because the object is frozen and may be used in
+sets or dictionaries. \\
+String representation
+& Checks that readable output is produced for compact and non-compact cases.
+This matters for debugging and for explaining examples. \\
+Immutability
+& Checks that the object cannot be modified after construction. This keeps the
+relation stable once it has been validated. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection*{Current limitations of \texttt{PowerRelation}}
+
+\begin{itemize}
+  \item The parser currently supports compact notation only. It can parse
+  \texttt{"12 > (1 \string~ 2) > \{\}"}, but it does not parse a general
+  non-compact string such as \texttt{"\{10, 2\} > \{10\}"}.
+  \item Multi-digit numbers in compact strings are read as separate digits.
+  For example, \texttt{"10"} means coalition \texttt{(1,0)}, not the single
+  element \texttt{10}. Multi-character elements should therefore be created
+  with \texttt{from\_nested}.
+  \item The string representation is mainly for display. It is not guaranteed
+  that every printed string can be passed back into \texttt{from\_string}.
+  \item The object does not yet check whether the relation is complete over
+  the whole powerset. A complete power relation over elements
+  \texttt{\{1,2\}} should include \texttt{12}, \texttt{1}, \texttt{2} and
+  \texttt{\{\}}. At the moment, partial relations are allowed.
+  \item The object does not yet enforce a custom player order. Elements are
+  sorted by a stable Python key. This avoids crashes with mixed types, but it
+  may not always match the mathematical order desired by the user.
+  \item Python equality can be surprising for mixed types. For example,
+  \texttt{1 == True}. This means that using booleans and integers together can
+  create duplicate-like behavior.
+  \item The lookup methods are currently simple scans through the relation.
+  This is fine for small examples, but a dictionary index would be faster for
+  large relations.
+\end{itemize}
+
+\subsubsection*{Possible improvements for \texttt{PowerRelation}}
+
+\begin{itemize}
+  \item Add a completeness check, for example \texttt{is\_complete()}, to
+  verify whether all coalitions from the powerset are present.
+  \item Add an optional validation mode that requires a complete relation when
+  an algorithm needs one.
+  \item Add a parser for non-compact notation, so strings with multi-character
+  elements can be read safely.
+  \item Add a cached lookup dictionary to speed up
+  \texttt{coalition\_lookup} and \texttt{coalition\_position}.
+  \item Decide whether mixed element types should be allowed or restricted.
+  \item Compare more examples directly against the original R
+  \texttt{PowerRelation.R} implementation.
+  \item Add documentation explaining the difference between compact notation
+  and structured input through \texttt{from\_nested}.
+\end{itemize}
+
+\subsection{Current Test Status}
+
+The current local test suite passes:
+
+\begin{verbatim}
+tests/test_helpers.py          23 passed
+tests/test_package_import.py    1 passed
+tests/test_power_relation.py  143 passed
+
+Full test suite: 167 passed
+\end{verbatim}
 
 \section{Next Step}
 
-The next implementation step is to properly port the \texttt{PowerRelation}
-object, because most of the remaining functions depend on it.
+The next implementation step is to use \texttt{PowerRelation} as the base for
+the next core object or ranking method. The planned order is:
+\texttt{SocialRanking}, then the first ranking method such as
+\texttt{lexcel\_scores} and \texttt{lexcel\_ranking}.
+
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %%%%%%% START OF AGY ADDITIONS (CONTINUATION OF LIBRARY SKELETON LOG) %%%%%
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Phase 2 Implementation: Rankings and Social Rankings}
+
+Following the completion of the basic elements of the \pathitem{PowerRelation} object, the next phase of the project was to implement the final outputs and algorithms: the \pathitem{SocialRanking} data structure and the lexicographical excellence (Lexcel) ranking algorithms.
+
+\subsection{Implemented File 3: \pathitem{social\_ranking.py}}
+
+\subsubsection*{Purpose of the file}
+
+\pathitem{social\_ranking.py} defines the \pathitem{SocialRanking} class, which represents a total preorder of individual elements. Similar to \pathitem{PowerRelation}, it represents elements ordered from best to worst, where elements in the same equivalence class (rank) are tied (indifferent). The class is immutable and frozen.
+
+\subsubsection*{Detailed Function and Class Role Analysis}
+
+\begin{description}
+  \item[\pathitem{\_is\_outer\_parentheses(s: str) -> bool}]
+  \begin{itemize}
+    \item \textbf{Role}: A utility function that determines if the string \texttt{s} is wrapped in matching outermost parentheses. It returns \texttt{True} for \texttt{"(a \string~ b)"} and \texttt{"('x',)"}, but returns \texttt{False} for expressions like \texttt{"(a) \string~ (b)"} where the parentheses do not enclose the entire string.
+    \item \textbf{Complexity}: It executes in $O(n)$ time where $n$ is the length of the string, tracking the parenthesis depth level sequentially. It adds a small $O(1)$ memory overhead.
+    \item \textbf{Limitations}: It assumes standard parentheses matching and does not validate contents between them, merely tracking balance.
+  \end{itemize}
+
+  \item[\pathitem{\_parse\_ranking\_element(elem\_str: str) -> Element}]
+  \begin{itemize}
+    \item \textbf{Role}: Converts a string element representation into its corresponding Python type. If the element is parenthesized and contains a comma (e.g., \texttt{"('x',)"} or \texttt{"(1, 2)"}), it parses it as a Python \texttt{tuple} (stripping outer parentheses and quotes from components). Digits are coerced to integers; all other strings remain unchanged.
+    \item \textbf{Complexity}: $O(m)$ where $m$ is the length of the element string. It splits components by commas and strips spaces/quotes, which is lightweight.
+    \item \textbf{Limitations}: Does not support nested tuple structures inside elements (e.g. \texttt{"((1, 2), 3)"}) and is limited to basic single-quotes or double-quotes stripping.
+  \end{itemize}
+
+  \item[\pathitem{\_flatten\_all(item: Any) -> list[Element]}]
+  \begin{itemize}
+    \item \textbf{Role}: Recursively flattens nested iterables (such as \texttt{list}, \texttt{tuple}, or \texttt{set}) into a single flat list of elements, leaving string literals as atomic units.
+    \item \textbf{Complexity}: $O(d \cdot n)$ where $d$ is the depth of nesting and $n$ is the total number of elements.
+    \item \textbf{Limitations}: Since it flattens all tuples recursively, it cannot distinguish between nesting levels representing rank collections and tuple elements like \texttt{('x',)}. Thus, passing tuple elements directly to this flattener destroys their tuple types.
+  \end{itemize}
+
+  \item[\pathitem{SocialRanking.\_\_init\_\_} and \pathitem{\_\_post\_init\_\_}]
+  \begin{itemize}
+    \item \textbf{Role}: Validates the ranking structure. It ensures that:
+    \begin{itemize}
+      \item Ranks are nested and every rank is itself an iterable.
+      \item No rank is empty.
+      \item Elements are hashable and unique across all ranks (no element can appear in two different ranks).
+      \item Elements inside each rank are sorted deterministically using \pathitem{\_element\_sort\_key}.
+    \end{itemize}
+    It freezes the \pathitem{ranks} tuple and builds a read-only mapping named \pathitem{\_element\_index} mapping elements to their integer rank index.
+    \item \textbf{Complexity}: $O(r \cdot e \log e)$ where $r$ is the number of ranks and $e$ is the size of each rank (due to the deterministic sorting). Index building adds $O(N)$ where $N$ is the total number of elements.
+    \item \textbf{Limitations}: Elements must be hashable. If the sorting key raises errors on mixed types, it relies on type qualifying strings to sort stably, which might differ from a user's semantic ordering.
+  \end{itemize}
+
+  \item[\pathitem{SocialRanking.\_build\_without\_sort}]
+  \begin{itemize}
+    \item \textbf{Role}: A private helper classmethod that constructs the ranking object directly without applying sorting to elements inside tied classes. This is critical for \pathitem{from\_string} where the exact user-defined input order must be preserved.
+    \item \textbf{Complexity}: $O(N)$ where $N$ is the total number of elements.
+    \item \textbf{Limitations}: Bypasses canonical sorting, which means two rankings built this way with different internal tie orders will have the same mathematical representation but different internal structures.
+  \end{itemize}
+
+  \item[\pathitem{SocialRanking.from\_nested}]
+  \begin{itemize}
+    \item \textbf{Role}: Classmethod that parses nested structures, allowing both 2-level nesting (\texttt{[[1], [2, 3]]}) and 3-level nesting (\texttt{[[[1]], [[2, 3]]]}). It flattens nesting to create the final preorder.
+    \item \textbf{Complexity}: Runs \pathitem{\_flatten\_all} for each rank, adding $O(d \cdot N)$ complexity.
+    \item \textbf{Limitations}: Due to recursive flattening, it cannot be used if the elements themselves are tuples.
+  \end{itemize}
+
+  \item[\pathitem{SocialRanking.from\_string}]
+  \begin{itemize}
+    \item \textbf{Role}: Classmethod that parses strings (e.g. \texttt{"1 > (2 \string~ 3) > 4"}). It splits classes using \texttt{>} and splits ties using \texttt{\string~}. It enforces strict parentheses matching rules.
+    \item \textbf{Complexity}: $O(s)$ where $s$ is the string length.
+    \item \textbf{Limitations}: Compact representation limits: multi-digit elements cannot be parsed without separation unless they are quoted or wrapped in tuples.
+  \end{itemize}
+
+  \item[\pathitem{SocialRanking.elements}]
+  \begin{itemize}
+    \item \textbf{Role}: Returns all unique elements present in the ranking, sorted and cached.
+    \item \textbf{Complexity}: $O(N \log N)$ on the first access and $O(1)$ on subsequent accesses.
+  \end{itemize}
+
+  \item[\pathitem{SocialRanking.compare(first, second)}]
+  \begin{itemize}
+    \item \textbf{Role}: Looks up the rank index of both elements using the precomputed dictionary. Returns \texttt{1} if \texttt{first} has a lower index (better rank), \texttt{-1} if higher (worse rank) and \texttt{0} if they are in the same rank.
+    \item \textbf{Complexity}: $O(1)$ due to dictionary lookups.
+  \end{itemize}
+
+  \item[\pathitem{SocialRanking.\_\_str\_\_}]
+  \begin{itemize}
+    \item \textbf{Role}: Serializes the ranking into a compact string representation. Ranks with size $>1$ are enclosed in parentheses and separated by \texttt{\string~}.
+    \item \textbf{Complexity}: $O(N)$ where $N$ is the total number of elements.
+  \end{itemize}
+\end{description}
+
+\subsection{Implemented File 4: \pathitem{rankings.py}}
+
+\subsubsection*{Purpose of the file}
+
+\pathitem{rankings.py} contains the ranking algorithms that map a \pathitem{PowerRelation} over coalitions into a \pathitem{SocialRanking} over individual elements. The first method implemented is Lexicographical Excellence (Lexcel).
+
+\subsubsection*{Detailed Function Role Analysis}
+
+\begin{description}
+  \item[\pathitem{lexcel\_scores(power\_relation: PowerRelation) -> dict[Element, tuple[int, ...]]}]
+  \begin{itemize}
+    \item \textbf{Role}: Computes the Lexcel score vector for each element. The $i$-th entry of the score vector counts how many coalitions in the $i$-th equivalence class of \texttt{power\_relation} contain the element. Crucially, the score vectors are of fixed length (matching the number of equivalence classes in the relation), including zeros where elements do not appear.
+    \item \textbf{Complexity}: $O(|N| \cdot |EQS| \cdot |Coalitions|)$ where $N$ is the element set and $EQS$ is the equivalence classes of the power relation.
+    \item \textbf{Limitations}: Scans all equivalence classes and coalitions, which can scale poorly for extremely large relations.
+  \end{itemize}
+
+  \item[\pathitem{lexcel\_ranking(power\_relation: PowerRelation) -> SocialRanking}]
+  \begin{itemize}
+    \item \textbf{Role}: Computes the final ranking. It sorts elements by their score vectors in descending lexicographic order. Elements with identical score vectors are grouped into the same rank (indifferent). Within each tied rank, elements are sorted by \pathitem{\_element\_sort\_key} in ascending order. It builds and returns a \pathitem{SocialRanking} object.
+    \item \textbf{Complexity}: Primary sorting runs in $O(|N| \log |N| \cdot |EQS|)$ since score vector comparison takes $O(|EQS|)$ in the worst case. Grouping adds $O(|N|)$ complexity.
+    \item \textbf{Limitations}: Relies on the exact score vector comparisons. Elements that appear in different contexts but have identical scores are grouped, which requires stable sorting keys to handle tie-breaking.
+  \end{itemize}
+\end{description}
+
+\section{Challenges Encountered and Solutions}
+
+During the implementation of Phase 2, we met several architectural challenges that required modifying the code:
+
+\subsection{Tokenizer Comma Conflict}
+\begin{itemize}
+  \item \textbf{The Challenge}: The tokenizer skipped commas globally to support tuple-like elements (e.g. \texttt{('x', 'y')}). This broke the test \pathitem{test\_from\_string\_rejects\_comma\_character} because an input like \texttt{"1,2 > 1"} (which should be rejected in compact notation) was tokenized into \texttt{['1', '2', '>', '1']}, skipping the comma. The parser would then crash with a misleading \texttt{"expected '>'" } error instead of the expected \texttt{"unsupported character"} error.
+  \item \textbf{The Solution}: We added a \texttt{paren\_depth} counter to \pathitem{\_tokenize\_power\_relation\_string} in \pathitem{power\_relation.py}. We modified the comma branch to only allow and skip commas if \texttt{paren\_depth > 0}. If a comma is seen at \texttt{paren\_depth == 0}, it raises a \pathitem{ValueError} for an unsupported character immediately:
+  \begin{verbatim}
+        elif character == ",":
+            if paren_depth > 0:
+                index += 1
+            else:
+                raise ValueError("unsupported character: ,")
+  \end{verbatim}
+\end{itemize}
+
+\subsection{Parenthesis Ambiguity in \pathitem{SocialRanking.from\_string}}
+\begin{itemize}
+  \item \textbf{The Challenge}: In \pathitem{SocialRanking.from\_string}, any class string starting with \texttt{"("} and ending with \texttt{")"} was stripped. This was correct for tied ranks like \texttt{"(a \string~ b)"}, but it crashed on tuple elements like \texttt{"('x',)"} because it stripped the outer parentheses, looked for \texttt{\string~} and raised \texttt{ValueError: malformed parentheses}.
+  \item \textbf{The Solution}: We introduced \pathitem{\_is\_outer\_parentheses} and updated the logic:
+  \begin{verbatim}
+            has_open = class_str.startswith("(")
+            has_close = class_str.endswith(")")
+            if has_open != has_close:
+                raise ValueError("malformed parentheses")
+
+            if has_open and has_close:
+                if "~" in class_str:
+                    class_str = class_str[1:-1].strip()
+                elif "," in class_str:
+                    pass  # Keep tuple literal intact
+                else:
+                    raise ValueError("malformed parentheses")
+  \end{verbatim}
+  This handles unbalanced parenthesis errors (like \texttt{"(1 > 2) > 3)"}) and correctly rejects single-element parenthesis structures (like \texttt{"(5)"} or \texttt{"(1)"}) since they contain neither \texttt{\string~} nor \texttt{,}.
+\end{itemize}
+
+\subsection{Tuple Element Flattening in \pathitem{from\_nested}}
+\begin{itemize}
+  \item \textbf{The Challenge}: Because \pathitem{from\_nested} flattens all iterable structures recursively, it converted tuple elements like \texttt{('x',)} into string elements like \texttt{'x'} in 
+  
+  \pathitem{test\_lexcel\_non\_comparable\_elements}, violating type safety.
+  \item \textbf{The Solution}: We changed the return statement of \pathitem{lexcel\_ranking} in \pathitem{rankings.py} to bypass \pathitem{from\_nested} entirely. Since the ranks are already built correctly, we instantiate \pathitem{SocialRanking} directly:
+  \begin{verbatim}
+    # Before
+    return SocialRanking.from_nested(ranks)
+
+    # After
+    return SocialRanking(tuple(tuple(r) for r in ranks))
+  \end{verbatim}
+\end{itemize}
+
+\subsection{Fixed-length Score Vectors and Invariants}
+\begin{itemize}
+  \item \textbf{The Challenge}: The test suite initially expected variable-length score vectors and strict rankings on ties. However, CRAN's R implementation uses fixed-length vectors (including zero counts) and groups elements with equal score vectors into the same rank. Additionally, the fuzzer generated invalid power relations containing duplicates, which our library correctly raises errors for but which crashed the tests.
+  \item \textbf{The Solution}: 
+  \begin{enumerate}
+    \item We corrected the assertions in \pathitem{test\_rankings.py} to expect leading zeros (e.g. \texttt{tuple([0]*i + [1]*(10-i))}) and ties (using \texttt{\string~}).
+    \item We caught \pathitem{ValueError} in \pathitem{test\_lexcel\_invariants} and invoked \pathitem{hypothesis.reject()} to discard invalid generated relations containing duplicate elements/coalitions.
+    \item We corrected a set-vs-tuple equality check in the tests, casting \pathitem{pr.elements} to a \pathitem{set}.
+    \item We corrected the mathematical invariant assertion: the sum of element scores for a class is equal to the sum of the lengths of all coalitions in that class, rather than \texttt{len(eq\_class)}.
+  \end{enumerate}
+\end{itemize}
+
+\section{Current Test Status \& Phase 2 Validation}
+
+With these challenges resolved, the test suite is fully stable:
+
+\begin{verbatim}
+tests/test_helpers.py         23 passed
+tests/test_package_import.py   1 passed
+tests/test_power_relation.py 143 passed
+tests/test_rankings.py         8 passed
+tests/test_social_ranking.py  45 passed
+
+Full test suite: 220 passed
+\end{verbatim}
+
+\section{Limitations \& Future Steps}
+
+\begin{itemize}
+  \item \textbf{Performance Optimization}: Lookup methods in \pathitem{PowerRelation} and \pathitem{SocialRanking} currently scan lists. For very large relations, we should introduce a cached lookup dictionary to speed up search time from $O(k)$ to $O(1)$.
+  \item \textbf{Compact Representation Limitations}: The parser still assumes compact representations use single characters unless quotes or tuples are explicitly supplied. Multi-digit elements must be carefully managed.
+  \item \textbf{Additional Ranking Methods}: The next step is to port the remaining cooperative ranking algorithms from the R package, such as the Copeland method, Cumulative ranking, Banzhaf ranking and L1/L2 solutions.
+\end{itemize}
 
 \end{document}
