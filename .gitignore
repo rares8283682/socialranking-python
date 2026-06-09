@@ -11,6 +11,7 @@ venv/
 
 # Test and tooling caches
 .pytest_cache/
+.hypothesis/
 .coverage
 htmlcov/
 
