@@ -10,6 +10,53 @@ Element: TypeAlias = Hashable
 Rank: TypeAlias = Tuple[Element, ...]
 
 
+def _is_outer_parentheses(s: str) -> bool:
+    """Check if the string is enclosed in matching outer parentheses."""
+    if not (s.startswith("(") and s.endswith(")")):
+        return False
+    depth = 0
+    for i, char in enumerate(s):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return i == len(s) - 1
+    return False
+
+
+def _parse_ranking_element(elem_str: str) -> Element:
+    """Parse a single ranking element, converting tuple literals, integers, or keeping strings."""
+    elem_str = elem_str.strip()
+    if elem_str.startswith("(") and elem_str.endswith(")"):
+        inner = elem_str[1:-1].strip()
+        if not inner:
+            return ()
+        parts = inner.split(",")
+        parsed_parts = []
+        for p in parts:
+            p = p.strip()
+            if not p:
+                continue
+            if p.startswith("'") and p.endswith("'"):
+                parsed_parts.append(p[1:-1])
+            elif p.startswith('"') and p.endswith('"'):
+                parsed_parts.append(p[1:-1])
+            elif p.lstrip('-').isdigit():
+                parsed_parts.append(int(p))
+            else:
+                parsed_parts.append(p)
+        return tuple(parsed_parts)
+    elif elem_str.startswith("'") and elem_str.endswith("'"):
+        return elem_str[1:-1]
+    elif elem_str.startswith('"') and elem_str.endswith('"'):
+        return elem_str[1:-1]
+    elif elem_str.lstrip('-').isdigit():
+        return int(elem_str)
+    else:
+        return elem_str
+
+
 class _ImmutableTuple(tuple):
     """Immutable tuple subclass that raises ``AttributeError`` on mutation attempts.
     Used for inner ranks so that attempts to modify an element raise ``AttributeError``
@@ -197,12 +244,12 @@ class SocialRanking:
                 raise ValueError("malformed parentheses")
 
             if has_open and has_close:
-                inner = class_str[1:-1].strip()
-                if '(' in inner or ')' in inner:
+                if "~" in class_str:
+                    class_str = class_str[1:-1].strip()
+                elif "," in class_str:
+                    pass
+                else:
                     raise ValueError("malformed parentheses")
-                if '~' not in inner:
-                    raise ValueError("malformed parentheses")
-                class_str = inner
 
             element_strings = class_str.split("~")
             elements: list[Element] = []
@@ -210,12 +257,18 @@ class SocialRanking:
                 elem_str = elem_str.strip()
                 if not elem_str:
                     raise ValueError("empty element name found")
-                if any(ch in elem_str for ch in "(),>~"):
-                    raise ValueError("invalid character")
-                if elem_str.lstrip('-').isdigit():
-                    elements.append(int(elem_str))
+                
+                # Check for invalid characters depending on whether it is a tuple literal element
+                if elem_str.startswith("(") and elem_str.endswith(")"):
+                    if ">" in elem_str or "~" in elem_str:
+                        raise ValueError("invalid character")
+                    if "," not in elem_str:
+                        raise ValueError("malformed parentheses")
                 else:
-                    elements.append(elem_str)
+                    if any(ch in elem_str for ch in "(),>~"):
+                        raise ValueError("invalid character")
+                
+                elements.append(_parse_ranking_element(elem_str))
             ranks.append(elements)
         # Preserve order without sorting.
         return cls._build_without_sort(ranks)
@@ -276,5 +329,5 @@ class SocialRanking:
             if len(rank) == 1:
                 formatted.append(str(rank[0]))
             else:
-                formatted.append(f"({" ~ ".join(str(e) for e in rank)})")
+                formatted.append(f"({' ~ '.join(str(e) for e in rank)})")
         return " > ".join(formatted)

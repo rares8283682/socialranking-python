@@ -13,18 +13,35 @@ LookupIndex: TypeAlias = int | None
 ElementLocation: TypeAlias = tuple[int, int]
 
 
-@dataclass(frozen=True, eq=False)
 class PowerRelation:
     """Ordered equivalence classes of coalitions.
     A power relation ranks coalitions from best to worst. Coalitions inside the
     same equivalence class are considered equally good.
+
+    Parameters
+    ----------
+    equivalence_classes : iterable of equivalence classes
+        Each equivalence class is an iterable of coalitions.
+    elements : set, optional
+        If provided together with an empty *equivalence_classes*, the relation
+        is treated as having zero equivalence classes but the given elements.
     """
 
-    equivalence_classes: tuple[EquivalenceClass, ...]
+    __slots__ = ('equivalence_classes', '_explicit_elements')
 
-    def __post_init__(self) -> None:
-        normalized = _normalize_equivalence_classes(self.equivalence_classes)
-        object.__setattr__(self, "equivalence_classes", normalized)
+    def __init__(self, equivalence_classes: tuple[EquivalenceClass, ...] | list = (),*,elements: set[Element] | None = None,) -> None:
+        eq_input = tuple(equivalence_classes)
+
+        if not eq_input and elements is not None:
+            #no equivalence classes but explicit element set.
+            normalized: tuple[EquivalenceClass, ...] = ()
+            object.__setattr__(self, 'equivalence_classes', normalized)
+            sorted_elems = tuple(sorted(elements, key=_element_sort_key))
+            object.__setattr__(self, '_explicit_elements', sorted_elems)
+        else:
+            normalized = _normalize_equivalence_classes(eq_input)
+            object.__setattr__(self, 'equivalence_classes', normalized)
+            object.__setattr__(self, '_explicit_elements', None)
 
     @classmethod
     def from_nested(cls, equivalence_classes: Iterable[Iterable[Iterable[Element]]]) -> PowerRelation:
@@ -70,11 +87,19 @@ class PowerRelation:
 
         return cls.from_nested(equivalence_classes)
 
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError(f"cannot set attribute '{name}' on frozen PowerRelation")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError(f"cannot delete attribute '{name}' on frozen PowerRelation")
+
     @property
     def elements(self) -> tuple[Element, ...]:
         """Unique elements appearing in the relation."""
-        elements = {
-            element
+        explicit = object.__getattribute__(self, '_explicit_elements')
+        if explicit is not None:
+            return explicit
+        elements = { element
             for equivalence_class in self.equivalence_classes
             for coalition in equivalence_class
             for element in coalition
@@ -318,6 +343,7 @@ def _tokenize_power_relation_string(value: str) -> list[str]:
 
     tokens: list[str] = []
     index = 0
+    paren_depth = 0
 
     while index < len(cleaned):
         character = cleaned[index]
@@ -325,9 +351,33 @@ def _tokenize_power_relation_string(value: str) -> list[str]:
         if cleaned.startswith("{}", index):
             tokens.append("{}")
             index += 2
-        elif character in {"(", ")", ">", "~"}:
+        elif character == "(":
+            paren_depth += 1
             tokens.append(character)
             index += 1
+        elif character == ")":
+            paren_depth -= 1
+            tokens.append(character)
+            index += 1
+        elif character in {">", "~"}:
+            tokens.append(character)
+            index += 1
+        elif character == "'":
+            # Supports tuple-like elements, e.g. ('x',) in the string.
+            start = index
+            index += 1
+            while index < len(cleaned) and cleaned[index] != "'":
+                index += 1
+            if index >= len(cleaned):
+                raise ValueError("unterminated quoted literal")
+            index += 1  # consume closing quote
+            tokens.append(cleaned[start:index])
+        elif character == ",":
+            # Commas are only allowed inside parentheses (tuple-like coalitions)
+            if paren_depth > 0:
+                index += 1
+            else:
+                raise ValueError("unsupported character in power relation string: ,")
         elif character.isalnum():
             start = index
             while index < len(cleaned) and cleaned[index].isalnum():
@@ -353,11 +403,8 @@ def _parse_power_relation_tokens(tokens: list[str]) -> list[list[list[Element]]]
                 raise ValueError("empty or malformed equivalence class")
 
             while True:
-                if tokens[index] in {"(", ")", ">", "~"}:
-                    raise ValueError("expected coalition inside equivalence class")
-
-                equivalence_class.append(_parse_coalition_token(tokens[index]))
-                index += 1
+                coalition, index = _parse_one_coalition(tokens, index)
+                equivalence_class.append(coalition)
 
                 if index >= len(tokens):
                     raise ValueError("missing closing parenthesis")
@@ -373,8 +420,8 @@ def _parse_power_relation_tokens(tokens: list[str]) -> list[list[list[Element]]]
         else:
             if tokens[index] in {")", ">", "~"}:
                 raise ValueError("expected coalition")
-            equivalence_class.append(_parse_coalition_token(tokens[index]))
-            index += 1
+            coalition, index = _parse_one_coalition(tokens, index)
+            equivalence_class.append(coalition)
 
         equivalence_classes.append(equivalence_class)
 
@@ -389,12 +436,49 @@ def _parse_power_relation_tokens(tokens: list[str]) -> list[list[list[Element]]]
     return equivalence_classes
 
 
+def _parse_one_coalition(tokens: list[str], index: int) -> tuple[list[Element], int]:
+    """Parse a single coalition starting at *index*.
+
+    A coalition is either:
+    - A simple alphanumeric token like ``"ab"`` -> elements ``['a', 'b']``
+    - The empty coalition ``"{}"`` -> ``[]``
+    - A **tuple-literal coalition** starting with ``(`` and ending with ``)``,
+      containing quoted elements like ``'x'``.  E.g. ``('x',)`` becomes a
+      coalition containing one element: the Python tuple ``('x',)``.
+    """
+    token = tokens[index]
+
+    if token == "(":
+        # Tuple-literal coalition: ('x',) or ('x','y') etc.
+        index += 1
+        tuple_elements: list[Element] = []
+        while index < len(tokens) and tokens[index] != ")":
+            t = tokens[index]
+            if t.startswith("'") and t.endswith("'"):
+                tuple_elements.append(t[1:-1])  # strip quotes
+            elif t.isalnum():
+                tuple_elements.append(_parse_compact_element(t) if len(t) == 1 else t)
+            # skip commas and other separators
+            index += 1
+        if index >= len(tokens):
+            raise ValueError("missing closing parenthesis for tuple literal")
+        index += 1  # consume closing ')'
+        # The coalition is a single element which is a tuple of the parsed items.
+        return [tuple(tuple_elements)], index
+    else:
+        return _parse_coalition_token(token), index + 1
+
+
 def _parse_coalition_token(token: str) -> list[Element]:
     if token == "{}":
         return []
 
     if "{" in token or "}" in token:
         raise ValueError("only the empty coalition '{}' may use braces")
+
+    if token.startswith("'") and token.endswith("'"):
+        # Single quoted literal as a standalone coalition element.
+        return [token[1:-1]]
 
     return [_parse_compact_element(character) for character in token]
 
@@ -403,3 +487,4 @@ def _parse_compact_element(character: str) -> Element:
     if character.isdigit():
         return int(character)
     return character
+
